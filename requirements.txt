@@ -1,8 +1,9 @@
 streamlit>=1.29.0  # 或者可以直接写 streamlit，让它安装最新版本
 plotly==5.17.0
-requests
+requests==2.31.0
+gspread==5.12.0
+oauth2client==4.1.3
+qrcode==7.4.2
+Pillow==10.0.1
 kaleido==0.2.1
-gspread
-oauth2client
-qrcode
-Pillow
+uuid
