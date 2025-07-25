@@ -3,8 +3,6 @@ import plotly.graph_objects as go
 import json
 import requests # 引入requests库用于调用DeepSeek API
 from io import BytesIO
-# Removed uuid as GSheets and sharing by ID are not in this version.
-# Removed base64 as it's not explicitly used here without QR code generation.
 
 # Streamlit的页面配置
 st.set_page_config(
@@ -192,7 +190,14 @@ def call_deepseek_api(user_inputs, user_name):
         response.raise_for_status() # 检查HTTP请求是否成功
 
         result = response.json()
-        response_text = result['choices'][0]['message']['content']
+        # 确保这里 message['content'] 存在且是字符串
+        if 'choices' in result and len(result['choices']) > 0 and \
+           'message' in result['choices'][0] and 'content' in result['choices'][0]['message']:
+            response_text = result['choices'][0]['message']['content']
+        else:
+            st.error("API返回结构异常，未找到预期内容。")
+            st.info(f"API原始返回（供调试）：{result}")
+            return None
         
         # 尝试解析JSON
         try:
@@ -299,7 +304,10 @@ def display_portrait_results(current_user_name, analysis_result_data):
     
     # 重新分析按钮
     if st.button("🔄 重新分析", use_container_width=True):
-        st.experimental_rerun() # 重新运行应用，回到初始状态
+        # 使用st.query_params.clear()并st.experimental_rerun()可以清空URL参数并刷新页面
+        # 这样可以模拟回到应用的初始状态，清空所有输入
+        st.query_params.clear() # 清除URL参数，如果存在
+        st.experimental_rerun() # 强制应用重新运行
 
 # 主应用界面
 def main():
@@ -313,70 +321,80 @@ def main():
     通过AI深度分析，生成你的专属潜力雷达图。只需几分钟，获得专业的职业发展洞察！
     """)
     
-    # 初始化 session_state 变量，用于保存用户输入，避免在 rerun 时丢失
-    if 'user_name_input' not in st.session_state:
-        st.session_state.user_name_input = ""
-    if 'innovation_input' not in st.session_state:
-        st.session_state.innovation_input = ""
-    if 'collaboration_input' not in st.session_state:
-        st.session_state.collaboration_input = ""
-    if 'leadership_input' not in st.session_state:
-        st.session_state.leadership_input = ""
-    if 'tech_acumen_input' not in st.session_state:
-        st.session_state.tech_acumen_input = ""
+    # 强制初始化所有 session_state 变量在脚本的顶层，无论执行路径如何
+    # 这是解决 KeyError 的关键
+    if 'stored_user_name' not in st.session_state:
+        st.session_state.stored_user_name = ""
+    if 'stored_innovation_input' not in st.session_state:
+        st.session_state.stored_innovation_input = ""
+    if 'stored_collaboration_input' not in st.session_state:
+        st.session_state.stored_collaboration_input = ""
+    if 'stored_leadership_input' not in st.session_state:
+        st.session_state.stored_leadership_input = ""
+    if 'stored_tech_acumen_input' not in st.session_state:
+        st.session_state.stored_tech_acumen_input = ""
 
-    # 用户昵称输入框，使用 session_state 保持其值
-    user_name = st.text_input(
+    # 用户昵称输入框，直接从 session_state 获取和更新值
+    user_name_input_widget = st.text_input(
         "👤 请输入你的昵称", 
         placeholder="例如：小王、Alex、技术达人...", 
         key="user_name_widget", # 确保 widget key 唯一
-        value=st.session_state.user_name_input,
-        on_change=lambda: setattr(st.session_state, 'user_name_input', st.session_state.user_name_widget)
+        value=st.session_state.stored_user_name # 初始化值从session_state获取
     )
-    # 确保 session_state 中的值与输入框保持同步
-    st.session_state.user_name_input = user_name
-
+    # 立即将 widget 的最新值同步到 session_state，以确保后续逻辑使用最新值
+    st.session_state.stored_user_name = user_name_input_widget
     
+    # 如果URL中带有分享ID，尝试从Google Sheets加载并显示画像 (这段代码在当前版本中被移除了，但如果您希望重新引入则需要在此处理)
+    # 目前根据您的最新代码，移除了对 Google Sheets 的依赖和 share_id 的处理
+    # 如果需要恢复分享功能，您需要重新集成 gspread 和相关逻辑，并在此处根据 share_id 加载数据
+    # if st.query_params.get("share_id"):
+    #     st.warning("分享ID功能在此版本中被移除。请重新生成您的画像。")
+    #     if st.button("返回主页重新生成"):
+    #         st.query_params.clear()
+    #         st.experimental_rerun()
+    #     st.stop() # 停止当前运行，强制用户重新生成
+
+
     # 只有当昵称输入框有内容时才显示下面的表单
-    if st.session_state.user_name_input: 
-        st.markdown(f"### 👋 Hi {st.session_state.user_name_input}，请回答以下四个问题：")
+    if st.session_state.stored_user_name: 
+        st.markdown(f"### 👋 Hi {st.session_state.stored_user_name}，请回答以下四个问题：")
         
         # 创建表单
-        with st.form("profile_form", clear_on_submit=False): # 设置 clear_on_submit=False 以便在验证失败时保留输入
+        with st.form("profile_form", clear_on_submit=False): # clear_on_submit=False 以便在验证失败时保留输入
             st.markdown("#### 📝 请详细回答以下问题，这将帮助AI更准确地分析你的潜力：")
             
-            # 四个维度的问题，绑定到 session_state
-            # 移除了 on_change 回调，避免 StreamlitInvalidFormCallbackError
+            # 四个维度的问题，直接从session_state初始化值，不再使用on_change
+            # 移除了 on_change 回调以避免 StreamlitInvalidFormCallbackError
             innovation_input = st.text_area(
                 "🧠 **创新指数**：请描述一个你近期主导或参与的最有创意的项目或想法，你是如何贡献原创思路的？",
                 height=120,
                 placeholder="请详细描述你的创新经历...",
-                key="innovation_widget",
-                value=st.session_state.innovation_input
+                key="innovation_widget_form",
+                value=st.session_state.stored_innovation_input # 初始化值
             )
             
             collaboration_input = st.text_area(
                 "🤝 **协作潜力**：请描述一次重要的团队合作经历。你的角色是什么？你如何促进沟通和团队效率？",
                 height=120,
                 placeholder="请分享你的团队协作经验...",
-                key="collaboration_widget",
-                value=st.session_state.collaboration_input
+                key="collaboration_widget_form",
+                value=st.session_state.stored_collaboration_input # 初始化值
             )
             
             leadership_input = st.text_area(
                 "👑 **领导特质**：想象你领导的项目严重落后，你会采取哪三个关键步骤来扭转局面？",
                 height=120,
                 placeholder="请描述你的领导策略...",
-                key="leadership_widget",
-                value=st.session_state.leadership_input
+                key="leadership_widget_form",
+                value=st.session_state.stored_leadership_input # 初始化值
             )
             
             tech_acumen_input = st.text_area(
                 "⚡ **技术敏感度**：哪一项新兴 AI 技术（如：多模态、AI Agent、生成式视频）最让你感到兴奋？为什么？你认为它会如何改变你所在的行业？",
                 height=120,
                 placeholder="请分享你对AI技术的见解...",
-                key="tech_acumen_widget",
-                value=st.session_state.tech_acumen_input
+                key="tech_acumen_widget_form",
+                value=st.session_state.stored_tech_acumen_input # 初始化值
             )
             
             # 提交按钮
@@ -384,24 +402,19 @@ def main():
         
         # 处理表单提交
         if submitted:
-            # 获取当前最新的输入值，这些值已通过 on_change 存储在 session_state 中
-            current_user_name_value = st.session_state.user_name_input
-            # 注意：这里的 current_..._value 需要从对应的 widget key 中获取
-            # 因为 form 的 clear_on_submit=False，并且 on_change 被移除了
-            # 提交后，我们可以直接从 widget key 中读取最新值
-            # 实际上，Streamlit 在 form 提交时，会返回 form 内所有组件的最新值
-            # 所以直接使用 st.session_state 对应的变量（因为 value=st.session_state.xxx 绑定了）是正确的
-            # 确保这些值在 main 函数顶部被初始化并在表单提交前已更新
+            # 获取当前提交的值
+            current_user_name_value = st.session_state.stored_user_name # 昵称从session_state获取
+            # 表单内的输入框的值，在提交后可以直接从它们的返回值中获取
             current_innovation_value = innovation_input
             current_collaboration_value = collaboration_input
             current_leadership_value = leadership_input
             current_tech_acumen_value = tech_acumen_input
             
-            # 更新 session_state，使得这些值在 rerun 后也能保留
-            st.session_state.innovation_input = innovation_input
-            st.session_state.collaboration_input = collaboration_input
-            st.session_state.leadership_input = leadership_input
-            st.session_state.tech_acumen_input = tech_acumen_input
+            # 提交后，将表单的当前输入值保存到 session_state，以便在下次刷新时保留
+            st.session_state.stored_innovation_input = current_innovation_value
+            st.session_state.stored_collaboration_input = current_collaboration_value
+            st.session_state.stored_leadership_input = current_leadership_value
+            st.session_state.stored_tech_acumen_input = current_tech_acumen_value
 
 
             # 验证所有输入是否都已填写
@@ -424,12 +437,13 @@ def main():
                     # 显示结果
                     display_portrait_results(current_user_name_value, analysis_result)
                     
-                    # 提交成功后，清空除昵称外的所有输入框的session_state值
+                    # 提交成功并显示结果后，清空除昵称外的所有输入框的session_state值
                     # 这样下次显示表单时，除了昵称，其他输入框会是空的
-                    st.session_state.innovation_input = ""
-                    st.session_state.collaboration_input = ""
-                    st.session_state.leadership_input = ""
-                    st.session_state.tech_acumen_input = ""
+                    # 这里的清空操作是针对 stored_input 变量，因为它们是初始化表单的值来源
+                    st.session_state.stored_innovation_input = ""
+                    st.session_state.stored_collaboration_input = ""
+                    st.session_state.stored_leadership_input = ""
+                    st.session_state.stored_tech_acumen_input = ""
                 else:
                     st.error("😅 分析出了一点小问题，请你调整一下输入内容再试试。确保每个问题都有详细的回答哦！")
 
