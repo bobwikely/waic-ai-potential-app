@@ -408,15 +408,4 @@ with st.sidebar:
 if __name__ == "__main__":
     main()
 
-# requirements.txt 内容：
-"""
-streamlit==1.28.1
-plotly==5.17.0
-requests==2.31.0
-gspread==5.12.0
-oauth2client==4.1.3
-qrcode==7.4.2
-Pillow==10.0.1
-kaleido==0.2.1
-uuid
-"""
+
