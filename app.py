@@ -57,22 +57,31 @@ st.markdown("""
 @st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
+        # 调试信息：尝试获取 Secrets
+        # print("Attempting to get GCP_SERVICE_ACCOUNT_KEY from st.secrets...")
         creds_json = st.secrets["GCP_SERVICE_ACCOUNT_KEY"]
+        # print("GCP_SERVICE_ACCOUNT_KEY obtained. Length:", len(creds_json))
+        
         creds_dict = json.loads(creds_json) # 尝试解析JSON
+        # print("GCP_SERVICE_ACCOUNT_KEY parsed as JSON successfully.")
         
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
+        # print("gspread client authorized successfully.")
         return client
     except KeyError:
         st.error("❌ Google Cloud Service Account 凭据未在 Streamlit Secrets 中配置 (GCP_SERVICE_ACCOUNT_KEY)。")
+        st.stop() # 出现KeyError时停止应用
         return None
     except json.JSONDecodeError:
         st.error("❌ Google Cloud Service Account 凭据 JSON 格式错误。请检查 Streamlit Secrets 中的内容是否为有效的JSON。")
-        st.stop() # 出现JSON解析错误时停止应用，避免后续报错
+        # print(f"JSONDecodeError: Failed to parse JSON. Raw content (first 200 chars): {creds_json[:200]}...") # 调试输出
+        st.stop() # 出现JSON解析错误时停止应用
         return None
     except Exception as e:
         st.error(f"❌ 无法连接 Google Sheets：{str(e)}。请检查凭据和API启用情况。")
+        # print(f"Exception in get_gspread_client: {e}") # 调试输出
         st.stop() # 连接错误时停止应用
         return None
 
@@ -85,6 +94,7 @@ def get_worksheet():
             spreadsheet_name = "WAIC_AI_Potentials_Data"
             worksheet_name = "User_Profiles"
             sheet = client.open(spreadsheet_name).worksheet(worksheet_name)
+            # print(f"Worksheet '{worksheet_name}' obtained successfully.") # 调试输出
             return sheet
         except gspread.exceptions.SpreadsheetNotFound:
             st.error(f"❌ 找不到名为 '{spreadsheet_name}' 的 Google Sheet。请检查名称或共享权限。")
@@ -96,6 +106,7 @@ def get_worksheet():
             return None
         except Exception as e:
             st.error(f"❌ 无法获取 Google Sheet 工作表：{str(e)}")
+            # print(f"Exception in get_worksheet: {e}") # 调试输出
             st.stop()
             return None
     return None
@@ -105,10 +116,13 @@ def append_to_sheet(data_row):
     sheet = get_worksheet()
     if sheet:
         try:
+            # print("Attempting to append row to Google Sheet:", data_row) # 调试输出
             sheet.append_row(data_row)
+            # print("Row appended successfully.") # 调试输出
             return True
         except Exception as e:
             st.error(f"❌ 无法将数据写入 Google Sheet：{str(e)}")
+            # print(f"Exception in append_to_sheet: {e}") # 调试输出
             return False
     return False
 
@@ -118,12 +132,16 @@ def get_record_by_share_id(share_id):
     if sheet:
         try:
             all_records = sheet.get_all_records()
+            # print(f"Fetched {len(all_records)} records from sheet.") # 调试输出
             for record in all_records:
                 if record.get('share_id') == share_id:
+                    # print(f"Found record for share_id: {share_id}") # 调试输出
                     return record
+            # print(f"No record found for share_id: {share_id}") # 调试输出
             return None
         except Exception as e:
             st.error(f"❌ 无法根据分享ID查找数据：{str(e)}")
+            # print(f"Exception in get_record_by_share_id: {e}") # 调试输出
             return None
     return None
 
@@ -192,44 +210,48 @@ def call_deepseek_api(user_inputs):
             "Content-Type": "application/json"
         }
         
+        # 确保三引号正确闭合，并且内容是有效的Python字符串
         system_prompt = """你是一位资深的技术招聘官和职业发展顾问，具有丰富的人才评估经验。
-        请基于用户提供的信息，从四个维度进行专业分析：创新指数、协作潜力、领导特质、技术敏感度。
+请基于用户提供的信息，从四个维度进行专业分析：创新指数、协作潜力、领导特质、技术敏感度。
 
-        **在您的分析和评语中，请始终使用“您”来指代用户，保持亲切、积极和鼓励的语气。**
-        
-        评分标准：
-        - 创新指数(innovation)：原创思维、问题解决能力、创意实现
-        - 协作潜力(collaboration)：团队合作、沟通能力、集体意识  
-        - 领导特质(leadership)：决策能力、责任担当、影响力
-        - 技术敏感度(tech_acumen)：技术理解、学习能力、前瞻性
+**在您的分析和评语中，请始终使用“您”来指代用户，保持亲切、积极和鼓励的语气。**
 
-        请严格按照以下JSON格式输出，不要添加任何其他内容：
-        {
-          "scores": {
-            "innovation": <1-100之间的整数>,
-            "collaboration": <1-100之间的整数>,
-            "leadership": <1-100之间的整数>,  
-            "tech_acumen": <1-100之间的整数>
-          },
-          "analysis": "<约100-150字的综合分析，语言积极鼓励，突出闪光点，请始终使用“您”来称呼用户，而不是直接提及昵称>",
-          "golden_sentence": "<一句精炼的专属评语，作为您的AI Slogan，请直接以评语开始，不要提到用户昵称>"
-        }"""
+评分标准：
+- 创新指数(innovation)：原创思维、问题解决能力、创意实现
+- 协作潜力(collaboration)：团队合作、沟通能力、集体意识  
+- 领导特质(leadership)：决策能力、责任担当、影响力
+- 技术敏感度(tech_acumen)：技术理解、学习能力、前瞻性
+
+请严格按照以下JSON格式输出，不要添加任何其他内容：
+{
+  "scores": {
+    "innovation": <1-100之间的整数>,
+    "collaboration": <1-100之间的整数>,
+    "leadership": <1-100之间的整数>,  
+    "tech_acumen": <1-100之间的整数>
+  },
+  "analysis": "<约100-150字的综合分析，语言积极鼓励，突出闪光点，请始终使用“您”来称呼用户，而不是直接提及昵称>",
+  "golden_sentence": "<一句精炼的专属评语，作为您的AI Slogan，请直接以评语开始，不要提到用户昵称>"
+}
+""" # 确保这里有三引号并独占一行
         
+        # 确保三引号正确闭合
         user_prompt = f"""请分析以下信息：
 
-        创新指数相关信息：
-        {user_inputs['innovation']}
+创新指数相关信息：
+{user_inputs['innovation']}
 
-        协作潜力相关信息：
-        {user_inputs['collaboration']}
+协作潜力相关信息：
+{user_inputs['collaboration']}
 
-        领导特质相关信息：
-        {user_inputs['leadership']}
+领导特质相关信息：
+{user_inputs['leadership']}
 
-        技术敏感度相关信息：
-        {user_inputs['tech_acumen']}
+技术敏感度相关信息：
+{user_inputs['tech_acumen']}
 
-        请基于以上信息进行专业分析，并严格按照JSON格式输出，确保分析和评语中使用“您”来称呼。"""
+请基于以上信息进行专业分析，并严格按照JSON格式输出，确保分析和评语中使用“您”来称呼。
+""" # 确保这里有三引号并独占一行
 
         payload = {
             "model": "deepseek-chat",
@@ -242,24 +264,32 @@ def call_deepseek_api(user_inputs):
             "response_format": {"type": "json_object"}
         }
 
+        # print("Sending request to DeepSeek API...") # 调试输出
         response = requests.post(url, headers=headers, json=payload, timeout=60)
         response.raise_for_status()
+        # print("DeepSeek API response received.") # 调试输出
 
         result = response.json()
-        response_text = result['choices'][0']['message']['content']
+        # print("DeepSeek API JSON result:", result) # 调试输出
+        response_text = result['choices'][0]['message']['content']
+        # print("DeepSeek API content:", response_text) # 调试输出
         
         parsed_result = json.loads(response_text)
+        # print("DeepSeek API content parsed as JSON successfully.") # 调试输出
         return parsed_result
             
     except requests.exceptions.RequestException as e:
         st.error(f"❌ API网络请求失败：{str(e)}")
+        # print(f"API Request Exception: {e}") # 调试输出
         return None
     except json.JSONDecodeError:
         st.error("❌ API返回格式错误，无法解析JSON。请尝试更具体的输入或联系支持。")
+        # print(f"JSONDecodeError: Failed to parse API response. Raw content: {response_text}") # 调试输出
         st.info(f"API原始返回内容（供调试）：{response_text}")
         return None
     except Exception as e:
         st.error(f"❌ API调用出现未知问题：{str(e)}")
+        # print(f"Unexpected Exception in call_deepseek_api: {e}") # 调试输出
         return None
 
 def convert_plotly_to_bytes(fig):
@@ -406,16 +436,16 @@ def main():
 
 
     # 初始化所有输入组件的session_state值，确保它们在任何时候都有默认值
-    if 'user_name_value' not in st.session_state:
-        st.session_state.user_name_value = ""
-    if 'innovation_input_value' not in st.session_state:
-        st.session_state.innovation_input_value = ""
-    if 'collaboration_input_value' not in st.session_state:
-        st.session_state.collaboration_input_value = ""
-    if 'leadership_input_value' not in st.session_state:
-        st.session_state.leadership_input_value = ""
-    if 'tech_acumen_input_value' not in st.session_state:
-        st.session_state.tech_acumen_input_value = ""
+    if 'user_name_input_widget' not in st.session_state: # 修改为widget的key
+        st.session_state.user_name_input_widget = ""
+    if 'innovation_input_area' not in st.session_state: # 修改为widget的key
+        st.session_state.innovation_input_area = ""
+    if 'collaboration_input_area' not in st.session_state: # 修改为widget的key
+        st.session_state.collaboration_input_area = ""
+    if 'leadership_input_area' not in st.session_state: # 修改为widget的key
+        st.session_state.leadership_input_area = ""
+    if 'tech_acumen_input_area' not in st.session_state: # 修改为widget的key
+        st.session_state.tech_acumen_input_area = ""
 
 
     # 以下是用户填写表单并生成画像的原始逻辑
@@ -424,71 +454,91 @@ def main():
         "👤 请输入您的昵称", 
         placeholder="例如：小王、Alex、技术达人...", 
         key="user_name_input_widget", # 唯一的widget key
-        value=st.session_state.user_name_value, # 绑定到session_state值
-        on_change=lambda: setattr(st.session_state, 'user_name_value', st.session_state.user_name_input_widget) # 当组件值改变时更新session_state
+        # value=st.session_state.user_name_input_widget, # 移除此行，让on_change处理
+        on_change=lambda: setattr(st.session_state, 'user_name_input_widget', st.session_state.user_name_input_widget) # 当组件值改变时更新session_state
     )
+    # 如果用户输入了值，更新session_state
+    if user_name != st.session_state.user_name_input_widget:
+        st.session_state.user_name_input_widget = user_name
+
     
-    if user_name: # 只有当user_name不为空时才显示表单
-        st.markdown(f"### 👋 Hi {user_name}，请回答以下四个问题：")
+    if st.session_state.user_name_input_widget: # 只有当user_name_input_widget不为空时才显示表单
+        st.markdown(f"### 👋 Hi {st.session_state.user_name_input_widget}，请回答以下四个问题：")
         
-        with st.form("profile_form", clear_on_submit=True): # 表单提交后清空内容
+        with st.form("profile_form", clear_on_submit=True):
             st.markdown("#### 📝 请详细回答以下问题，这将帮助AI更准确地分析您的潜力：")
             
+            # 为每个文本输入框添加一个唯一的 `key`
             innovation_input = st.text_area(
                 "🧠 **创新指数**：请描述一个您近期主导或参与的最有创意的项目或想法，您是如何贡献原创思路的？",
                 height=120,
                 placeholder="请详细描述您的创新经历...",
                 key="innovation_input_area",
-                value=st.session_state.innovation_input_value,
-                on_change=lambda: setattr(st.session_state, 'innovation_input_value', st.session_state.innovation_input_area)
+                # value=st.session_state.innovation_input_area, # 移除此行
+                on_change=lambda: setattr(st.session_state, 'innovation_input_area', st.session_state.innovation_input_area)
             )
+            if innovation_input != st.session_state.innovation_input_area: # 如果组件值与session_state不一致，更新session_state
+                st.session_state.innovation_input_area = innovation_input
             
             collaboration_input = st.text_area(
                 "🤝 **协作潜力**：请描述一次重要的团队合作经历。您的角色是什么？您如何促进沟通和团队效率？",
                 height=120,
                 placeholder="请分享您的团队协作经验...",
                 key="collaboration_input_area",
-                value=st.session_state.collaboration_input_value,
-                on_change=lambda: setattr(st.session_state, 'collaboration_input_value', st.session_state.collaboration_input_area)
+                # value=st.session_state.collaboration_input_area, # 移除此行
+                on_change=lambda: setattr(st.session_state, 'collaboration_input_area', st.session_state.collaboration_input_area)
             )
-            
+            if collaboration_input != st.session_state.collaboration_input_area:
+                st.session_state.collaboration_input_area = collaboration_input
+
             leadership_input = st.text_area(
                 "👑 **领导特质**：想象您领导的项目严重落后，您会采取哪三个关键步骤来扭转局面？",
                 height=120,
                 placeholder="请描述您的领导策略...",
                 key="leadership_input_area",
-                value=st.session_state.leadership_input_value,
-                on_change=lambda: setattr(st.session_state, 'leadership_input_value', st.session_state.leadership_input_area)
+                # value=st.session_state.leadership_input_area, # 移除此行
+                on_change=lambda: setattr(st.session_state, 'leadership_input_area', st.session_state.leadership_input_area)
             )
+            if leadership_input != st.session_state.leadership_input_area:
+                st.session_state.leadership_input_area = leadership_input
             
             tech_acumen_input = st.text_area(
                 "⚡ **技术敏感度**：哪一项新兴 AI 技术（如：多模态、AI Agent、生成式视频）最让您感到兴奋？为什么？您认为它会如何改变您所在的行业？",
                 height=120,
                 placeholder="请分享您对AI技术的见解...",
                 key="tech_acumen_input_area",
-                value=st.session_state.tech_acumen_input_value,
-                on_change=lambda: setattr(st.session_state, 'tech_acumen_input_value', st.session_state.tech_acumen_input_area)
+                # value=st.session_state.tech_acumen_input_area, # 移除此行
+                on_change=lambda: setattr(st.session_state, 'tech_acumen_input_area', st.session_state.tech_acumen_input_area)
             )
+            if tech_acumen_input != st.session_state.tech_acumen_input_area:
+                st.session_state.tech_acumen_input_area = tech_acumen_input
             
             submitted = st.form_submit_button("🚀 开始生成我的 AI 画像", use_container_width=True)
         
         if submitted:
-            # 提交后清空表单输入框
-            st.session_state.innovation_input_value = ""
-            st.session_state.collaboration_input_value = ""
-            st.session_state.leadership_input_value = ""
-            st.session_state.tech_acumen_input_value = ""
+            # 在这里使用 st.session_state 的值来获取用户输入
+            current_user_name_input = st.session_state.user_name_input_widget
+            current_innovation_input = st.session_state.innovation_input_area
+            current_collaboration_input = st.session_state.collaboration_input_area
+            current_leadership_input = st.session_state.leadership_input_area
+            current_tech_acumen_input = st.session_state.tech_acumen_input_area
 
-            if not all([innovation_input.strip(), collaboration_input.strip(), 
-                         leadership_input.strip(), tech_acumen_input.strip()]):
+            # 提交后清空表单输入框
+            st.session_state.innovation_input_area = ""
+            st.session_state.collaboration_input_area = ""
+            st.session_state.leadership_input_area = ""
+            st.session_state.tech_acumen_input_area = ""
+            # 注意：user_name_input_widget在这里不清空，因为它控制着表单的显示
+
+            if not all([current_innovation_input.strip(), current_collaboration_input.strip(), 
+                         current_leadership_input.strip(), current_tech_acumen_input.strip()]):
                 st.warning("⚠️ 请完整回答所有四个问题，这样AI才能给出更准确的分析哦！")
-                # 即使警告，也不要直接return，让用户看到警告后可以继续填写
-            else: # 只有所有输入都完整时才调用API和保存数据
+            else:
                 user_inputs = {
-                    'innovation': innovation_input,
-                    'collaboration': collaboration_input,
-                    'leadership': leadership_input,
-                    'tech_acumen': tech_acumen_input
+                    'innovation': current_innovation_input,
+                    'collaboration': current_collaboration_input,
+                    'leadership': current_leadership_input,
+                    'tech_acumen': current_tech_acumen_input
                 }
                 
                 with st.spinner("✨ AI 大模型(DeepSeek)正在为您深度分析，请稍候..."):
@@ -500,11 +550,11 @@ def main():
                     data_row = [
                         datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         current_share_id,
-                        user_name,
-                        innovation_input,
-                        collaboration_input,
-                        leadership_input,
-                        tech_acumen_input,
+                        current_user_name_input, # 使用session_state的值
+                        current_innovation_input, # 使用session_state的值
+                        current_collaboration_input, # 使用session_state的值
+                        current_leadership_input, # 使用session_state的值
+                        current_tech_acumen_input, # 使用session_state的值
                         analysis_result['scores'].get('innovation', ''),
                         analysis_result['scores'].get('collaboration', ''),
                         analysis_result['scores'].get('leadership', ''),
@@ -515,7 +565,7 @@ def main():
                     
                     if append_to_sheet(data_row):
                         st.success("✅ 您的画像数据已成功保存！")
-                        display_portrait_results(user_name, analysis_result, current_share_id)
+                        display_portrait_results(current_user_name_input, analysis_result, current_share_id)
                     else:
                         st.error("❌ 无法保存您的画像数据。请联系管理员或检查Google Sheets配置。")
                 else:
