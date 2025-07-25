@@ -4,3 +4,5 @@ requests
 kaleido==0.2.1
 gspread
 oauth2client
+qrcode
+Pillow
