@@ -4,9 +4,9 @@ import json
 import requests
 from io import BytesIO
 import uuid
-import gspread # 导入 gspread
-from oauth2client.service_account import ServiceAccountCredentials # 导入用于认证
-from datetime import datetime # 用于生成时间戳
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from datetime import datetime
 
 # 页面配置
 st.set_page_config(
@@ -48,25 +48,19 @@ st.markdown("""
     }
     /* 调整雷达图容器的最小高度，防止在小屏幕下过度压缩 */
     .stPlotlyChart {
-        min-height: 400px; /* 增加最小高度 */
+        min-height: 400px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # Gspread 初始化函数
-# 使用 st.cache_resource 缓存客户端，避免每次运行都重新认证
-@st.cache_resource(ttl=3600) # 缓存1小时，减少重复连接
+@st.cache_resource(ttl=3600)
 def get_gspread_client():
     try:
-        # 从 Streamlit Secrets 获取服务账户凭据
         creds_json = st.secrets["GCP_SERVICE_ACCOUNT_KEY"]
+        creds_dict = json.loads(creds_json) # 尝试解析JSON
         
-        # 将 JSON 字符串解析为 Python 字典
-        creds_dict = json.loads(creds_json)
-
-        # 定义授权范围
         scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-        # 使用字典凭据进行认证
         creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         client = gspread.authorize(creds)
         return client
@@ -75,31 +69,34 @@ def get_gspread_client():
         return None
     except json.JSONDecodeError:
         st.error("❌ Google Cloud Service Account 凭据 JSON 格式错误。请检查 Streamlit Secrets 中的内容是否为有效的JSON。")
+        st.stop() # 出现JSON解析错误时停止应用，避免后续报错
         return None
     except Exception as e:
         st.error(f"❌ 无法连接 Google Sheets：{str(e)}。请检查凭据和API启用情况。")
+        st.stop() # 连接错误时停止应用
         return None
 
 # 获取工作表
-# 使用 st.cache_data 缓存工作表对象，减少每次页面刷新时的重复获取
-@st.cache_data(ttl=600) # 缓存10分钟，减少API调用
+@st.cache_data(ttl=600)
 def get_worksheet():
     client = get_gspread_client()
     if client:
         try:
-            # 替换为你的 Google Sheet 名称和工作表名称
-            spreadsheet_name = "WAIC_AI_Potentials_Data" # 你的Google Sheet文件名
-            worksheet_name = "User_Profiles" # 你的工作表名称
+            spreadsheet_name = "WAIC_AI_Potentials_Data"
+            worksheet_name = "User_Profiles"
             sheet = client.open(spreadsheet_name).worksheet(worksheet_name)
             return sheet
         except gspread.exceptions.SpreadsheetNotFound:
             st.error(f"❌ 找不到名为 '{spreadsheet_name}' 的 Google Sheet。请检查名称或共享权限。")
+            st.stop()
             return None
         except gspread.exceptions.WorksheetNotFound:
             st.error(f"❌ 找不到工作表 '{worksheet_name}'。请检查名称。")
+            st.stop()
             return None
         except Exception as e:
             st.error(f"❌ 无法获取 Google Sheet 工作表：{str(e)}")
+            st.stop()
             return None
     return None
 
@@ -120,12 +117,11 @@ def get_record_by_share_id(share_id):
     sheet = get_worksheet()
     if sheet:
         try:
-            # 获取所有记录并查找 (对于小规模数据高效，大规模数据考虑优化为只查特定列)
             all_records = sheet.get_all_records()
             for record in all_records:
                 if record.get('share_id') == share_id:
                     return record
-            return None # 未找到对应的分享ID
+            return None
         except Exception as e:
             st.error(f"❌ 无法根据分享ID查找数据：{str(e)}")
             return None
@@ -142,7 +138,6 @@ def create_radar_chart(scores, user_name):
         scores.get('tech_acumen', 0)
     ]
     
-    # 闭合雷达图
     values_closed = values + [values[0]]
     categories_closed = categories + [categories[0]]
     
@@ -251,7 +246,7 @@ def call_deepseek_api(user_inputs):
         response.raise_for_status()
 
         result = response.json()
-        response_text = result['choices'][0]['message']['content']
+        response_text = result['choices'][0']['message']['content']
         
         parsed_result = json.loads(response_text)
         return parsed_result
@@ -282,8 +277,6 @@ def display_portrait_results(current_user_name, analysis_result_data, current_sh
     st.markdown("---")
     st.header(f"🎉 Hey, {current_user_name}！这是您的 AI 潜力画像：")
     
-    # 确保 analysis_result_data 结构正确，从 DeepSeek 返回的是 'golden_sentence'
-    # 从 Google Sheets 读取的可能是 'golden_sentence' 字段名
     golden_sentence = analysis_result_data.get('golden_sentence', '您是一位充满潜力的探索者！')
     st.markdown(f"""
     <div class="golden-sentence">
@@ -294,24 +287,20 @@ def display_portrait_results(current_user_name, analysis_result_data, current_sh
     col1, col2 = st.columns([0.6, 0.4])
     
     with col1:
-        # 统一处理 scores 数据来源
         scores = {}
         if 'scores' in analysis_result_data and isinstance(analysis_result_data['scores'], dict):
-            # 来自 DeepSeek API 的原始返回
             scores = analysis_result_data['scores']
         else:
-            # 来自 Google Sheets 的扁平化数据
             scores['innovation'] = analysis_result_data.get('innovation_score', 0)
             scores['collaboration'] = analysis_result_data.get('collaboration_score', 0)
             scores['leadership'] = analysis_result_data.get('leadership_score', 0)
             scores['tech_acumen'] = analysis_result_data.get('tech_acumen_score', 0)
 
-        # 确保所有分数都是整数
         for k in scores:
             try:
                 scores[k] = int(scores[k])
             except (ValueError, TypeError):
-                scores[k] = 0 # 默认为0
+                scores[k] = 0
         
         fig = create_radar_chart(scores, current_user_name)
         st.plotly_chart(fig, use_container_width=True)
@@ -323,7 +312,6 @@ def display_portrait_results(current_user_name, analysis_result_data, current_sh
         st.metric("👑 领导特质", f"{scores.get('leadership', 'N/A')}/100")
         st.metric("⚡ 技术敏感度", f"{scores.get('tech_acumen', 'N/A')}/100")
             
-    # 统一处理 analysis 文本来源
     analysis_text = analysis_result_data.get('analysis', analysis_result_data.get('analysis_text', '分析内容生成失败，请重试。'))
     st.markdown(f"""
     <div class="analysis-box">
@@ -344,9 +332,7 @@ def display_portrait_results(current_user_name, analysis_result_data, current_sh
             use_container_width=True
         )
     
-    # 增加分享链接和二维码功能
     if current_share_id:
-        # 请替换为您的 Streamlit App 的实际 URL
         base_app_url = "https://waic-ai-potential-app-cmpagnd2gprtttnonquh4w.streamlit.app/"
         share_url = f"{base_app_url}?share_id={current_share_id}"
         st.markdown(f"""
@@ -381,6 +367,7 @@ def display_portrait_results(current_user_name, analysis_result_data, current_sh
 
     # 重新分析按钮
     if st.button("🔄 重新分析", use_container_width=True):
+        st.query_params.clear() # 清除所有URL参数，确保回到主页面
         st.experimental_rerun()
 
 
@@ -404,119 +391,146 @@ def main():
         with st.spinner(f"正在加载分享ID为 '{share_id}' 的AI潜力画像..."):
             portrait_data = get_record_by_share_id(share_id)
             if portrait_data:
-                # 从 Google Sheets 获取的字典可以直接传入 display_portrait_results
                 display_portrait_results(
-                    portrait_data.get('user_name', '匿名用户'), # 从 Google Sheets 获取昵称
-                    portrait_data, # 直接传递整个字典
-                    share_id # 仍然传递 share_id 以便再次显示分享链接
+                    portrait_data.get('user_name', '匿名用户'),
+                    portrait_data,
+                    share_id
                 )
-                st.stop() # 显示完分享画像后停止，避免主流程继续
+                st.stop()
             else:
                 st.warning(f"🤔 未找到分享ID为 '{share_id}' 的画像数据。请检查链接是否正确或已过期。")
-                # 如果分享链接失效，可以引导用户回到主页面重新生成
                 if st.button("返回主页重新生成", use_container_width=True):
-                    st.query_params.clear() # 清除URL参数
-                    st.experimental_rerun() # 重新运行应用，回到填写表单状态
+                    st.query_params.clear()
+                    st.experimental_rerun()
+                st.stop() # 确保在未找到数据时也停止，避免渲染主表单
+
+
+    # 初始化所有输入组件的session_state值，确保它们在任何时候都有默认值
+    if 'user_name_value' not in st.session_state:
+        st.session_state.user_name_value = ""
+    if 'innovation_input_value' not in st.session_state:
+        st.session_state.innovation_input_value = ""
+    if 'collaboration_input_value' not in st.session_state:
+        st.session_state.collaboration_input_value = ""
+    if 'leadership_input_value' not in st.session_state:
+        st.session_state.leadership_input_value = ""
+    if 'tech_acumen_input_value' not in st.session_state:
+        st.session_state.tech_acumen_input_value = ""
 
 
     # 以下是用户填写表单并生成画像的原始逻辑
-    # 这里的 `key` 参数非常重要，确保 Streamlit 能够正确管理这个组件的状态
-    user_name = st.text_input("👤 请输入您的昵称", placeholder="例如：小王、Alex、技术达人...", key="user_name_input")
+    # 为每个输入组件指定一个唯一的key，并将其值绑定到st.session_state
+    user_name = st.text_input(
+        "👤 请输入您的昵称", 
+        placeholder="例如：小王、Alex、技术达人...", 
+        key="user_name_input_widget", # 唯一的widget key
+        value=st.session_state.user_name_value, # 绑定到session_state值
+        on_change=lambda: setattr(st.session_state, 'user_name_value', st.session_state.user_name_input_widget) # 当组件值改变时更新session_state
+    )
     
-    if user_name:
+    if user_name: # 只有当user_name不为空时才显示表单
         st.markdown(f"### 👋 Hi {user_name}，请回答以下四个问题：")
         
-        with st.form("profile_form"):
+        with st.form("profile_form", clear_on_submit=True): # 表单提交后清空内容
             st.markdown("#### 📝 请详细回答以下问题，这将帮助AI更准确地分析您的潜力：")
             
-            # 为每个文本输入框添加一个唯一的 `key`
             innovation_input = st.text_area(
                 "🧠 **创新指数**：请描述一个您近期主导或参与的最有创意的项目或想法，您是如何贡献原创思路的？",
                 height=120,
                 placeholder="请详细描述您的创新经历...",
-                key="innovation_input_area"
+                key="innovation_input_area",
+                value=st.session_state.innovation_input_value,
+                on_change=lambda: setattr(st.session_state, 'innovation_input_value', st.session_state.innovation_input_area)
             )
             
             collaboration_input = st.text_area(
                 "🤝 **协作潜力**：请描述一次重要的团队合作经历。您的角色是什么？您如何促进沟通和团队效率？",
                 height=120,
                 placeholder="请分享您的团队协作经验...",
-                key="collaboration_input_area"
+                key="collaboration_input_area",
+                value=st.session_state.collaboration_input_value,
+                on_change=lambda: setattr(st.session_state, 'collaboration_input_value', st.session_state.collaboration_input_area)
             )
             
             leadership_input = st.text_area(
                 "👑 **领导特质**：想象您领导的项目严重落后，您会采取哪三个关键步骤来扭转局面？",
                 height=120,
                 placeholder="请描述您的领导策略...",
-                key="leadership_input_area"
+                key="leadership_input_area",
+                value=st.session_state.leadership_input_value,
+                on_change=lambda: setattr(st.session_state, 'leadership_input_value', st.session_state.leadership_input_area)
             )
             
             tech_acumen_input = st.text_area(
                 "⚡ **技术敏感度**：哪一项新兴 AI 技术（如：多模态、AI Agent、生成式视频）最让您感到兴奋？为什么？您认为它会如何改变您所在的行业？",
                 height=120,
                 placeholder="请分享您对AI技术的见解...",
-                key="tech_acumen_input_area"
+                key="tech_acumen_input_area",
+                value=st.session_state.tech_acumen_input_value,
+                on_change=lambda: setattr(st.session_state, 'tech_acumen_input_value', st.session_state.tech_acumen_input_area)
             )
             
             submitted = st.form_submit_button("🚀 开始生成我的 AI 画像", use_container_width=True)
         
         if submitted:
+            # 提交后清空表单输入框
+            st.session_state.innovation_input_value = ""
+            st.session_state.collaboration_input_value = ""
+            st.session_state.leadership_input_value = ""
+            st.session_state.tech_acumen_input_value = ""
+
             if not all([innovation_input.strip(), collaboration_input.strip(), 
                          leadership_input.strip(), tech_acumen_input.strip()]):
                 st.warning("⚠️ 请完整回答所有四个问题，这样AI才能给出更准确的分析哦！")
-                return
-            
-            user_inputs = {
-                'innovation': innovation_input,
-                'collaboration': collaboration_input,
-                'leadership': leadership_input,
-                'tech_acumen': tech_acumen_input
-            }
-            
-            with st.spinner("✨ AI 大模型(DeepSeek)正在为您深度分析，请稍候..."):
-                analysis_result = call_deepseek_api(user_inputs)
-            
-            if analysis_result:
-                current_share_id = str(uuid.uuid4())
+                # 即使警告，也不要直接return，让用户看到警告后可以继续填写
+            else: # 只有所有输入都完整时才调用API和保存数据
+                user_inputs = {
+                    'innovation': innovation_input,
+                    'collaboration': collaboration_input,
+                    'leadership': leadership_input,
+                    'tech_acumen': tech_acumen_input
+                }
                 
-                # 准备要写入 Google Sheets 的数据行
-                # 确保顺序与您的 Google Sheet 表头一致
-                data_row = [
-                    datetime.now().strftime("%Y-%m-%d %H:%M:%S"), # 时间戳
-                    current_share_id,
-                    user_name,
-                    innovation_input,
-                    collaboration_input,
-                    leadership_input,
-                    tech_acumen_input,
-                    analysis_result['scores'].get('innovation', ''),
-                    analysis_result['scores'].get('collaboration', ''),
-                    analysis_result['scores'].get('leadership', ''),
-                    analysis_result['scores'].get('tech_acumen', ''),
-                    analysis_result.get('analysis', ''), # AI分析文本
-                    analysis_result.get('golden_sentence', '') # 专属评语
-                ]
+                with st.spinner("✨ AI 大模型(DeepSeek)正在为您深度分析，请稍候..."):
+                    analysis_result = call_deepseek_api(user_inputs)
                 
-                # 写入 Google Sheets
-                if append_to_sheet(data_row):
-                    st.success("✅ 您的画像数据已成功保存！")
-                    display_portrait_results(user_name, analysis_result, current_share_id)
+                if analysis_result:
+                    current_share_id = str(uuid.uuid4())
+                    
+                    data_row = [
+                        datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                        current_share_id,
+                        user_name,
+                        innovation_input,
+                        collaboration_input,
+                        leadership_input,
+                        tech_acumen_input,
+                        analysis_result['scores'].get('innovation', ''),
+                        analysis_result['scores'].get('collaboration', ''),
+                        analysis_result['scores'].get('leadership', ''),
+                        analysis_result['scores'].get('tech_acumen', ''),
+                        analysis_result.get('analysis', ''),
+                        analysis_result.get('golden_sentence', '')
+                    ]
+                    
+                    if append_to_sheet(data_row):
+                        st.success("✅ 您的画像数据已成功保存！")
+                        display_portrait_results(user_name, analysis_result, current_share_id)
+                    else:
+                        st.error("❌ 无法保存您的画像数据。请联系管理员或检查Google Sheets配置。")
                 else:
-                    st.error("❌ 无法保存您的画像数据。请联系管理员或检查Google Sheets配置。")
-
-            else:
-                st.error("😅 分析出了一点小问题，请您调整一下输入内容再试试。确保每个问题都有详细的回答哦！")
+                    st.error("😅 分析出了一点小问题，请您调整一下输入内容再试试。确保每个问题都有详细的回答哦！")
 
 # 侧边栏信息
 with st.sidebar:
-    st.markdown("### 🎪 WAIC 2025") # 已修改为 2025 年
+    st.markdown("### 🎪 WAIC 2025")
     st.markdown("**世界人工智能大会现场专享**")
     st.markdown("---")
     st.markdown("### 💻 技术栈")
     st.markdown("- **后端:** Python, Streamlit")
     st.markdown("- **AI模型:** DeepSeek API")
     st.markdown("- **可视化:** Plotly")
-    st.markdown("- **数据存储:** Google Sheets") # 更新技术栈
+    st.markdown("- **数据存储:** Google Sheets")
     st.markdown("---")
     st.markdown("### 💡 小贴士")
     st.markdown("""
@@ -524,7 +538,6 @@ with st.sidebar:
     - 可以结合具体案例和数据
     - 真实回答比完美回答更有价值
     """)
-    # 放置引流二维码的区域
     st.markdown("### 🤝 拓展您的 AI 视野")
     st.markdown("""
     如果您想深入了解 AI 培训、职业发展机会或参与我们的社群，
