@@ -346,13 +346,13 @@ def main():
             st.markdown("#### 📝 请详细回答以下问题，这将帮助AI更准确地分析你的潜力：")
             
             # 四个维度的问题，绑定到 session_state
+            # 移除了 on_change 回调，避免 StreamlitInvalidFormCallbackError
             innovation_input = st.text_area(
                 "🧠 **创新指数**：请描述一个你近期主导或参与的最有创意的项目或想法，你是如何贡献原创思路的？",
                 height=120,
                 placeholder="请详细描述你的创新经历...",
                 key="innovation_widget",
-                value=st.session_state.innovation_input,
-                on_change=lambda: setattr(st.session_state, 'innovation_input', st.session_state.innovation_widget)
+                value=st.session_state.innovation_input
             )
             
             collaboration_input = st.text_area(
@@ -360,8 +360,7 @@ def main():
                 height=120,
                 placeholder="请分享你的团队协作经验...",
                 key="collaboration_widget",
-                value=st.session_state.collaboration_input,
-                on_change=lambda: setattr(st.session_state, 'collaboration_input', st.session_state.collaboration_widget)
+                value=st.session_state.collaboration_input
             )
             
             leadership_input = st.text_area(
@@ -369,8 +368,7 @@ def main():
                 height=120,
                 placeholder="请描述你的领导策略...",
                 key="leadership_widget",
-                value=st.session_state.leadership_input,
-                on_change=lambda: setattr(st.session_state, 'leadership_input', st.session_state.leadership_widget)
+                value=st.session_state.leadership_input
             )
             
             tech_acumen_input = st.text_area(
@@ -378,8 +376,7 @@ def main():
                 height=120,
                 placeholder="请分享你对AI技术的见解...",
                 key="tech_acumen_widget",
-                value=st.session_state.tech_acumen_input,
-                on_change=lambda: setattr(st.session_state, 'tech_acumen_input', st.session_state.tech_acumen_widget)
+                value=st.session_state.tech_acumen_input
             )
             
             # 提交按钮
@@ -389,10 +386,23 @@ def main():
         if submitted:
             # 获取当前最新的输入值，这些值已通过 on_change 存储在 session_state 中
             current_user_name_value = st.session_state.user_name_input
-            current_innovation_value = st.session_state.innovation_input
-            current_collaboration_value = st.session_state.collaboration_input
-            current_leadership_value = st.session_state.leadership_input
-            current_tech_acumen_value = st.session_state.tech_acumen_input
+            # 注意：这里的 current_..._value 需要从对应的 widget key 中获取
+            # 因为 form 的 clear_on_submit=False，并且 on_change 被移除了
+            # 提交后，我们可以直接从 widget key 中读取最新值
+            # 实际上，Streamlit 在 form 提交时，会返回 form 内所有组件的最新值
+            # 所以直接使用 st.session_state 对应的变量（因为 value=st.session_state.xxx 绑定了）是正确的
+            # 确保这些值在 main 函数顶部被初始化并在表单提交前已更新
+            current_innovation_value = innovation_input
+            current_collaboration_value = collaboration_input
+            current_leadership_value = leadership_input
+            current_tech_acumen_value = tech_acumen_input
+            
+            # 更新 session_state，使得这些值在 rerun 后也能保留
+            st.session_state.innovation_input = innovation_input
+            st.session_state.collaboration_input = collaboration_input
+            st.session_state.leadership_input = leadership_input
+            st.session_state.tech_acumen_input = tech_acumen_input
+
 
             # 验证所有输入是否都已填写
             if not all([current_innovation_value.strip(), current_collaboration_value.strip(), 
@@ -415,6 +425,7 @@ def main():
                     display_portrait_results(current_user_name_value, analysis_result)
                     
                     # 提交成功后，清空除昵称外的所有输入框的session_state值
+                    # 这样下次显示表单时，除了昵称，其他输入框会是空的
                     st.session_state.innovation_input = ""
                     st.session_state.collaboration_input = ""
                     st.session_state.leadership_input = ""
