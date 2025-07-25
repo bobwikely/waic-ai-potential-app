@@ -1,14 +1,16 @@
 import streamlit as st
 import plotly.graph_objects as go
 import json
-import requests # 引入requests库用于调用DeepSeek API
-# from io import BytesIO # 图片生成功能已移除，因此BytesIO不再需要
+import requests  # 使用requests库用于调用DeepSeek API
+# from io import BytesIO # 图片下载功能已移除，不再需要
+# import qrcode # 二维码直接加载图片文件，不再需要动态生成
+# from PIL import Image # Pillow（PIL）用于qrcode，现在也无需导入
 
-# Streamlit的页面配置
+# 页面配置
 st.set_page_config(
-    page_title="WAIC AI潜力画像生成器 (DeepSeek版)", # 标题更新以反映模型变化
-    page_icon="🤖", # 页面图标
-    layout="wide" # 页面布局为宽屏
+    page_title="WAIC AI潜力画像生成器 (DeepSeek版)",  # 标题更新以反映模型变化
+    page_icon="🤖",
+    layout="wide"
 )
 
 # 自定义CSS样式，用于美化页面元素
@@ -49,7 +51,7 @@ st.markdown("""
         min-height: 400px;
     }
 </style>
-""", unsafe_allow_html=True) # 允许渲染HTML和CSS
+""", unsafe_allow_html=True)
 
 def create_radar_chart(scores, user_name):
     """
@@ -223,12 +225,12 @@ def call_deepseek_api(user_inputs, user_name):
         st.error(f"❌ API调用出现未知问题：{str(e)}")
         return None
 
-# Removed convert_plotly_to_bytes function as image download is no longer supported directly.
+# `convert_plotly_to_bytes` 函数已移除，因为它不再需要
 
 # 封装显示画像结果的逻辑，方便复用
 def display_portrait_results(current_user_name, analysis_result_data):
     """
-    显示AI潜力画像结果，包括雷达图、分析文本。图片下载功能已移除。
+    显示AI潜力画像结果，包括雷达图、分析文本、下载提示和底部的微信推广。
     参数:
         current_user_name (str): 当前用户昵称。
         analysis_result_data (dict): 包含AI分析结果的字典。
@@ -273,14 +275,53 @@ def display_portrait_results(current_user_name, analysis_result_data):
     </div>
     """, unsafe_allow_html=True)
             
-    # 移除图片下载功能
-    st.markdown("### ✨ 画像已生成！")
-    st.info("💡 温馨提示：目前暂不支持图片下载功能，您可以通过屏幕截图保存此画像。")
+    st.markdown("### 📥 保存与分享")
+            
+    # 图片下载功能已移除，替换为开发中提示
+    st.info("💡 图片下载功能正在开发中，敬请期待！您可以手动截图保存此画像。")
     
+    # 推广区域：继续你的AI学习之旅 (放置在主内容区域底部)
+    st.markdown("---")
+    st.markdown("### 🌟 继续你的AI学习之旅") # 调整标题措辞
+            
+    col_promo1, col_promo2 = st.columns([1, 1])
+            
+    with col_promo1:
+        st.markdown("""
+        <div style='background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                    padding: 20px; border-radius: 10px; color: white; text-align: center;'>
+            <h4>🎓 想深入学习AI？</h4>
+            <p>获取更多WAIC独家资源<br>
+            职业发展机会等你来！</p>
+        </div>
+        """, unsafe_allow_html=True)
+            
+    with col_promo2:
+        # 在这里放置微信二维码，直接加载图片文件
+        # 请确保 qr_code.png 文件存在于应用根目录
+        try:
+            st.image("qr_code.png", width=180, caption="扫码加微信，获取更多资源")
+        except Exception: # 捕获无法找到图片文件的情况
+            st.markdown("""
+            <div style='border: 2px dashed #667eea; padding: 20px; 
+                        border-radius: 10px; text-align: center; height: 180px;
+                        display: flex; align-items: center; justify-content: center;'>
+                <div>
+                    <p>📱 微信二维码</p>
+                    <small>请将二维码图片保存为 qr_code.png</small>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+    st.markdown("""
+    <div style='text-align: center; font-size: 12px; color: #666; margin-top: 10px;'>
+        扫描你名片上的微信二维码，<br>
+        或联系我获取更多信息！
+    </div>
+    """, unsafe_allow_html=True)
+
     # 重新分析按钮
     if st.button("🔄 重新分析", use_container_width=True):
-        # 使用st.query_params.clear()并st.experimental_rerun()可以清空URL参数并刷新页面
-        # 这样可以模拟回到应用的初始状态，清空所有输入
         st.query_params.clear() # 清除URL参数，如果存在 (Streamlit 1.10.0+支持)
         st.experimental_rerun() # 强制应用重新运行 (Streamlit 1.10.0+支持)
 
@@ -319,11 +360,6 @@ def main():
     # 立即将 widget 的最新值同步到 session_state，以确保后续逻辑使用最新值
     st.session_state.stored_user_name = user_name_input_widget
     
-    # 根据最新的代码状态，移除了对 Google Sheets 的依赖和 share_id 的处理。
-    # 之前的错误日志显示 StreamlitInvalidFormCallbackError 已经解决。
-    # 现在主要关注 `KeyError` 和 `SyntaxError: unterminated string literal`。
-    # `share_id` 和 Google Sheets 的功能已在您先前的代码中移除，因此这里也不再包含。
-
     # 只有当昵称输入框有内容时才显示下面的表单
     if st.session_state.stored_user_name: 
         st.markdown(f"### 👋 Hi {st.session_state.stored_user_name}，请回答以下四个问题：")
@@ -332,7 +368,7 @@ def main():
         with st.form("profile_form", clear_on_submit=False): # clear_on_submit=False 以便在验证失败时保留输入
             st.markdown("#### 📝 请详细回答以下问题，这将帮助AI更准确地分析你的潜力：")
             
-            # 四个维度的问题，直接从session_state初始化值，不再使用on_change
+            # 四个维度的问题，直接从session_state初始化值
             innovation_input = st.text_area(
                 "🧠 **创新指数**：请描述一个你近期主导或参与的最有创意的项目或想法，你是如何贡献原创思路的？",
                 height=120,
@@ -426,8 +462,8 @@ with st.sidebar:
     2. 详细回答四个维度的问题
     3. 等待AI分析（约30秒）
     4. 获得专属潜力雷达图
-    5. 下载图片分享给朋友
-    """)
+    5. （图片下载功能正在开发中）
+    """) # 更新说明，移除下载图片，加上提示
     st.markdown("---")
     st.markdown("### 💡 小贴士")
     st.markdown("""
