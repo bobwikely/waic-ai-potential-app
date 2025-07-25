@@ -1,2 +1,6 @@
-chromium-browser
-google-chrome-stable
+libatk-bridge2.0-0
+libgtk-3-0
+libnss3
+libxkbcommon0
+libdrm2
+libgbm1
