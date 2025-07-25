@@ -2,7 +2,7 @@ import streamlit as st
 import plotly.graph_objects as go
 import json
 import requests # 引入requests库用于调用DeepSeek API
-from io import BytesIO
+# from io import BytesIO # 图片生成功能已移除，因此BytesIO不再需要
 
 # Streamlit的页面配置
 st.set_page_config(
@@ -223,28 +223,12 @@ def call_deepseek_api(user_inputs, user_name):
         st.error(f"❌ API调用出现未知问题：{str(e)}")
         return None
 
-def convert_plotly_to_bytes(fig):
-    """
-    将Plotly图表转换为PNG格式的字节流，用于下载。
-    参数:
-        fig (plotly.graph_objects.Figure): 要转换的Plotly图表对象。
-    返回:
-        bytes: PNG图片字节流，如果转换失败则返回 None。
-    """
-    try:
-        # 使用kaleido将Plotly图表导出为图片
-        # 确保您的环境中已安装 'kaleido' 库：pip install kaleido
-        img_bytes = fig.to_image(format="png", width=1000, height=800, scale=2) 
-        return img_bytes
-    except Exception as e:
-        st.error(f"图片生成失败：{str(e)}")
-        st.warning("提示：如果图片无法下载，请确保您的环境中已安装 'kaleido' 库。")
-        return None
+# Removed convert_plotly_to_bytes function as image download is no longer supported directly.
 
 # 封装显示画像结果的逻辑，方便复用
 def display_portrait_results(current_user_name, analysis_result_data):
     """
-    显示AI潜力画像结果，包括雷达图、分析文本和下载选项。
+    显示AI潜力画像结果，包括雷达图、分析文本。图片下载功能已移除。
     参数:
         current_user_name (str): 当前用户昵称。
         analysis_result_data (dict): 包含AI分析结果的字典。
@@ -289,25 +273,16 @@ def display_portrait_results(current_user_name, analysis_result_data):
     </div>
     """, unsafe_allow_html=True)
             
-    st.markdown("### 📥 保存与分享")
-            
-    # 下载图片按钮
-    img_bytes = convert_plotly_to_bytes(fig)
-    if img_bytes:
-        st.download_button(
-            label="📱 下载结果图，分享你的 AI 潜力",
-            data=img_bytes,
-            file_name=f"{current_user_name}_AI潜力画像.png", # 文件名简化
-            mime="image/png",
-            use_container_width=True
-        )
+    # 移除图片下载功能
+    st.markdown("### ✨ 画像已生成！")
+    st.info("💡 温馨提示：目前暂不支持图片下载功能，您可以通过屏幕截图保存此画像。")
     
     # 重新分析按钮
     if st.button("🔄 重新分析", use_container_width=True):
         # 使用st.query_params.clear()并st.experimental_rerun()可以清空URL参数并刷新页面
         # 这样可以模拟回到应用的初始状态，清空所有输入
-        st.query_params.clear() # 清除URL参数，如果存在
-        st.experimental_rerun() # 强制应用重新运行
+        st.query_params.clear() # 清除URL参数，如果存在 (Streamlit 1.10.0+支持)
+        st.experimental_rerun() # 强制应用重新运行 (Streamlit 1.10.0+支持)
 
 # 主应用界面
 def main():
@@ -344,16 +319,10 @@ def main():
     # 立即将 widget 的最新值同步到 session_state，以确保后续逻辑使用最新值
     st.session_state.stored_user_name = user_name_input_widget
     
-    # 如果URL中带有分享ID，尝试从Google Sheets加载并显示画像 (这段代码在当前版本中被移除了，但如果您希望重新引入则需要在此处理)
-    # 目前根据您的最新代码，移除了对 Google Sheets 的依赖和 share_id 的处理
-    # 如果需要恢复分享功能，您需要重新集成 gspread 和相关逻辑，并在此处根据 share_id 加载数据
-    # if st.query_params.get("share_id"):
-    #     st.warning("分享ID功能在此版本中被移除。请重新生成您的画像。")
-    #     if st.button("返回主页重新生成"):
-    #         st.query_params.clear()
-    #         st.experimental_rerun()
-    #     st.stop() # 停止当前运行，强制用户重新生成
-
+    # 根据最新的代码状态，移除了对 Google Sheets 的依赖和 share_id 的处理。
+    # 之前的错误日志显示 StreamlitInvalidFormCallbackError 已经解决。
+    # 现在主要关注 `KeyError` 和 `SyntaxError: unterminated string literal`。
+    # `share_id` 和 Google Sheets 的功能已在您先前的代码中移除，因此这里也不再包含。
 
     # 只有当昵称输入框有内容时才显示下面的表单
     if st.session_state.stored_user_name: 
@@ -364,7 +333,6 @@ def main():
             st.markdown("#### 📝 请详细回答以下问题，这将帮助AI更准确地分析你的潜力：")
             
             # 四个维度的问题，直接从session_state初始化值，不再使用on_change
-            # 移除了 on_change 回调以避免 StreamlitInvalidFormCallbackError
             innovation_input = st.text_area(
                 "🧠 **创新指数**：请描述一个你近期主导或参与的最有创意的项目或想法，你是如何贡献原创思路的？",
                 height=120,
