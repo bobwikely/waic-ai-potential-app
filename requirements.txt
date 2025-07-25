@@ -5,3 +5,4 @@ gspread>=5.10.0
 oauth2client>=4.1.0
 qrcode[pil]>=7.4.0
 kaleido>=0.2.1
+Pillow
