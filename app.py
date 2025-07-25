@@ -1,18 +1,17 @@
 import streamlit as st
 import plotly.graph_objects as go
 import json
-import anthropic
+import requests  # 使用 requests 库来调用 DeepSeek API
 from io import BytesIO
-import base64
 
 # 页面配置
 st.set_page_config(
-    page_title="WAIC AI潜力画像生成器", 
-    page_icon="🤖",
+    page_title="WAIC AI潜力画像生成器 (DeepSeek版)",
+    page_icon="🧠",
     layout="wide"
 )
 
-# 自定义CSS样式
+# 自定义CSS样式 (与之前版本保持一致)
 st.markdown("""
 <style>
     .main-title {
@@ -26,7 +25,6 @@ st.markdown("""
         -webkit-text-fill-color: transparent;
         background-clip: text;
     }
-    
     .golden-sentence {
         text-align: center;
         font-size: 1.5rem;
@@ -37,7 +35,6 @@ st.markdown("""
         border-radius: 10px;
         margin: 1rem 0;
     }
-    
     .analysis-box {
         background-color: #f8f9fa;
         padding: 1.5rem;
@@ -49,13 +46,13 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 def create_radar_chart(scores, user_name):
-    """创建雷达图"""
+    """创建雷达图 (与之前版本保持一致)"""
     categories = ['创新指数', '协作潜力', '领导特质', '技术敏感度']
     values = [
-        scores['innovation'],
-        scores['collaboration'], 
-        scores['leadership'],
-        scores['tech_acumen']
+        scores.get('innovation', 0),
+        scores.get('collaboration', 0),
+        scores.get('leadership', 0),
+        scores.get('tech_acumen', 0)
     ]
     
     # 闭合雷达图
@@ -101,18 +98,23 @@ def create_radar_chart(scores, user_name):
     
     return fig
 
-def call_claude_api(user_inputs, user_name):
-    """调用Claude API进行分析"""
+def call_deepseek_api(user_inputs, user_name):
+    """【已修改】调用DeepSeek API进行分析"""
     try:
-        # 获取API密钥
-        api_key = st.secrets.get("CLAUDE_API_KEY", "")
+        # 获取DeepSeek API密钥
+        api_key = st.secrets.get("DEEPSEEK_API_KEY", "")
         if not api_key:
-            st.error("❌ API密钥未配置，请联系管理员")
+            st.error("❌ DeepSeek API密钥未配置，请联系管理员")
             return None
             
-        client = anthropic.Anthropic(api_key=api_key)
+        # DeepSeek API的URL和请求头
+        url = "https://api.deepseek.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
         
-        # 构建分析prompt
+        # 构建与Claude版本完全一致的Prompt
         system_prompt = """你是一位资深的技术招聘官和职业发展顾问，具有丰富的人才评估经验。
         请基于用户提供的信息，从四个维度进行专业分析：创新指数、协作潜力、领导特质、技术敏感度。
 
@@ -151,39 +153,43 @@ def call_claude_api(user_inputs, user_name):
         {user_inputs['tech_acumen']}
 
         请基于以上信息进行专业分析并按JSON格式输出。"""
-        
-        message = client.messages.create(
-            model="claude-3-haiku-20240307",  # 使用Haiku模型，速度更快
-            max_tokens=1000,
-            system=system_prompt,
-            messages=[
+
+        # 构建请求体
+        payload = {
+            "model": "deepseek-chat",  # 使用deepseek-chat模型
+            "messages": [
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
-            ]
-        )
-        
+            ],
+            "max_tokens": 1000,
+            "temperature": 0.7,
+            "response_format": {"type": "json_object"} # 请求JSON格式输出
+        }
+
+        # 发送请求
+        response = requests.post(url, headers=headers, json=payload, timeout=60)
+        response.raise_for_status() # 如果请求失败则抛出异常
+
         # 解析返回结果
-        response_text = message.content[0].text.strip()
+        result = response.json()
+        response_text = result['choices'][0]['message']['content']
         
-        # 尝试解析JSON
-        try:
-            result = json.loads(response_text)
-            return result
-        except json.JSONDecodeError:
-            # 如果直接解析失败，尝试提取JSON部分
-            import re
-            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
-            if json_match:
-                result = json.loads(json_match.group())
-                return result
-            else:
-                return None
-                
+        # Deepseek在json_object模式下会直接返回一个可解析的JSON字符串
+        parsed_result = json.loads(response_text)
+        return parsed_result
+            
+    except requests.exceptions.RequestException as e:
+        st.error(f"❌ API网络请求失败：{str(e)}")
+        return None
+    except json.JSONDecodeError:
+        st.error("❌ API返回格式错误，无法解析JSON。")
+        return None
     except Exception as e:
-        st.error(f"❌ API调用出现问题：{str(e)}")
+        st.error(f"❌ API调用出现未知问题：{str(e)}")
         return None
 
 def convert_plotly_to_bytes(fig):
-    """将Plotly图表转换为字节流用于下载"""
+    """将Plotly图表转换为字节流用于下载 (与之前版本保持一致)"""
     try:
         img_bytes = fig.to_image(format="png", width=800, height=600, scale=2)
         return img_bytes
@@ -245,7 +251,7 @@ def main():
         if submitted:
             # 验证输入
             if not all([innovation_input.strip(), collaboration_input.strip(), 
-                       leadership_input.strip(), tech_acumen_input.strip()]):
+                        leadership_input.strip(), tech_acumen_input.strip()]):
                 st.warning("⚠️ 请完整回答所有四个问题，这样AI才能给出更准确的分析哦！")
                 return
             
@@ -258,9 +264,9 @@ def main():
             }
             
             # 显示加载状态
-            with st.spinner("✨ AI 大模型正在为您深度分析，请稍候..."):
-                # 调用Claude API
-                analysis_result = call_claude_api(user_inputs, user_name)
+            with st.spinner("✨ AI 大模型(DeepSeek)正在为您深度分析，请稍候..."):
+                # 【已修改】调用DeepSeek API
+                analysis_result = call_deepseek_api(user_inputs, user_name)
             
             if analysis_result:
                 # 显示结果
@@ -270,7 +276,7 @@ def main():
                 # 显示专属Slogan
                 st.markdown(f"""
                 <div class="golden-sentence">
-                    ✨ {analysis_result['golden_sentence']} ✨
+                    ✨ {analysis_result.get('golden_sentence', '你是一位充满潜力的探索者！')} ✨
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -279,24 +285,24 @@ def main():
                 
                 with col1:
                     # 显示雷达图
-                    fig = create_radar_chart(analysis_result['scores'], user_name)
+                    fig = create_radar_chart(analysis_result.get('scores', {}), user_name)
                     st.plotly_chart(fig, use_container_width=True)
                 
                 with col2:
                     # 显示各维度得分
                     st.markdown("### 📊 详细得分")
                     
-                    scores = analysis_result['scores']
-                    st.metric("🧠 创新指数", f"{scores['innovation']}/100")
-                    st.metric("🤝 协作潜力", f"{scores['collaboration']}/100") 
-                    st.metric("👑 领导特质", f"{scores['leadership']}/100")
-                    st.metric("⚡ 技术敏感度", f"{scores['tech_acumen']}/100")
+                    scores = analysis_result.get('scores', {})
+                    st.metric("🧠 创新指数", f"{scores.get('innovation', 'N/A')}/100")
+                    st.metric("🤝 协作潜力", f"{scores.get('collaboration', 'N/A')}/100") 
+                    st.metric("👑 领导特质", f"{scores.get('leadership', 'N/A')}/100")
+                    st.metric("⚡ 技术敏感度", f"{scores.get('tech_acumen', 'N/A')}/100")
                 
                 # 显示综合分析
                 st.markdown(f"""
                 <div class="analysis-box">
                     <h3>🔍 AI 综合分析</h3>
-                    <p style="font-size: 1.1rem; line-height: 1.6;">{analysis_result['analysis']}</p>
+                    <p style="font-size: 1.1rem; line-height: 1.6;">{analysis_result.get('analysis', '分析内容生成失败，请重试。')}</p>
                 </div>
                 """, unsafe_allow_html=True)
                 
@@ -309,7 +315,7 @@ def main():
                     st.download_button(
                         label="📱 下载结果图，分享你的 AI 潜力",
                         data=img_bytes,
-                        file_name=f"{user_name}_AI潜力画像_{st.session_state.get('timestamp', 'waic')}.png",
+                        file_name=f"{user_name}_AI潜力画像_DeepSeek.png",
                         mime="image/png",
                         use_container_width=True
                     )
@@ -321,19 +327,15 @@ def main():
             else:
                 st.error("😅 分析出了一点小问题，请您调整一下输入内容再试试。确保每个问题都有详细的回答哦！")
 
-# 侧边栏信息
+# 侧边栏信息 (与之前版本保持一致)
 with st.sidebar:
     st.markdown("### 🎪 WAIC 2024")
     st.markdown("**世界人工智能大会现场专享**")
     st.markdown("---")
-    st.markdown("### 📋 使用说明")
-    st.markdown("""
-    1. 输入您的昵称
-    2. 详细回答四个维度的问题
-    3. 等待AI分析（约30秒）
-    4. 获得专属潜力雷达图
-    5. 下载图片分享给朋友
-    """)
+    st.markdown("### 💻 技术栈")
+    st.markdown("- **后端:** Python, Streamlit")
+    st.markdown("- **AI模型:** DeepSeek API")
+    st.markdown("- **可视化:** Plotly")
     st.markdown("---")
     st.markdown("### 💡 小贴士")
     st.markdown("""
